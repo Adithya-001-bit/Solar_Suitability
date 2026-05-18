@@ -159,7 +159,7 @@ def load_model():
     return joblib.load(model_path)
 
 # Initialize GEE
-@st.cache_resource
+@st.cache_resource(ttl=3600)
 def init_gee():
     try:
         # Streamlit Cloud / Local with Secrets
@@ -178,8 +178,12 @@ def init_gee():
             if "type" in gee_cfg and gee_cfg["type"] == "service_account":
                 sa_creds = dict(gee_cfg)
                 credentials = ee.ServiceAccountCredentials(gee_cfg["client_email"], key_data=json.dumps(sa_creds))
-                ee.Initialize(credentials=credentials, project=gee_cfg.get("project_id", ""))
-                return True
+                project_id = gee_cfg.get("project_id", "")
+                if project_id and project_id != "your-google-cloud-project-id":
+                    ee.Initialize(credentials=credentials, project=project_id)
+                else:
+                    ee.Initialize(credentials=credentials)
+                return True, ""
             # If using an OAuth refresh token
             elif "refresh_token" in gee_cfg:
                 creds = {
@@ -196,8 +200,13 @@ def init_gee():
                 cred_path = os.path.join(cred_dir, "credentials")
                 with open(cred_path, "w") as f:
                     json.dump(creds, f)
-                ee.Initialize(project=gee_cfg.get("project_id", ""))
-                return True
+                    
+                project_id = gee_cfg.get("project_id", "")
+                if project_id and project_id != "your-google-cloud-project-id":
+                    ee.Initialize(project=project_id)
+                else:
+                    ee.Initialize()
+                return True, ""
 
         # Local dev: read project ID from gee_project.txt
         if os.path.exists("gee_project.txt"):
@@ -205,13 +214,13 @@ def init_gee():
                 project_id = f.read().strip()
             if project_id:
                 ee.Initialize(project=project_id)
-                return True
+                return True, ""
                 
         # Fallback to default
         ee.Initialize()
-        return True
+        return True, ""
     except Exception as e:
-        return False
+        return False, str(e)
 
 # Fetch GEE data for a point using reduceRegion for robust extraction
 def fetch_gee_data(lat, lon, month):
@@ -388,7 +397,7 @@ def main():
 
     # Load model and GEE
     model = load_model()
-    gee_ok = init_gee()
+    gee_ok, gee_err = init_gee()
 
     # Status indicators
     col_s1, col_s2, col_s3 = st.columns(3)
@@ -401,7 +410,7 @@ def main():
         if gee_ok:
             st.success("✅ GEE connected")
         else:
-            st.warning("⚠️ GEE not authenticated")
+            st.warning(f"⚠️ GEE not authenticated{(': ' + gee_err[:80]) if gee_err else ''}")
     with col_s3:
         st.info("📅 Feb 24, 2026")
 
