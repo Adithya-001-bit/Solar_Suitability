@@ -162,7 +162,44 @@ def load_model():
 @st.cache_resource
 def init_gee():
     try:
-        # Check if project ID is saved
+        # Streamlit Cloud / Local with Secrets
+        has_gee_secrets = False
+        try:
+            if "gee" in st.secrets:
+                has_gee_secrets = True
+        except FileNotFoundError:
+            pass # No secrets file found
+
+        if has_gee_secrets:
+            import json
+            gee_cfg = st.secrets["gee"]
+            
+            # If using a service account (recommended for deployment)
+            if "type" in gee_cfg and gee_cfg["type"] == "service_account":
+                sa_creds = dict(gee_cfg)
+                credentials = ee.ServiceAccountCredentials(gee_cfg["client_email"], key_data=json.dumps(sa_creds))
+                ee.Initialize(credentials=credentials, project=gee_cfg.get("project_id", ""))
+                return True
+            # If using an OAuth refresh token
+            elif "refresh_token" in gee_cfg:
+                creds = {
+                    "refresh_token": gee_cfg["refresh_token"],
+                    "redirect_uri":  gee_cfg.get("redirect_uri", "http://localhost:8085"),
+                    "scopes": [
+                        "https://www.googleapis.com/auth/earthengine",
+                        "https://www.googleapis.com/auth/cloud-platform",
+                    ],
+                }
+                home = os.path.expanduser("~")
+                cred_dir = os.path.join(home, ".config", "earthengine")
+                os.makedirs(cred_dir, exist_ok=True)
+                cred_path = os.path.join(cred_dir, "credentials")
+                with open(cred_path, "w") as f:
+                    json.dump(creds, f)
+                ee.Initialize(project=gee_cfg.get("project_id", ""))
+                return True
+
+        # Local dev: read project ID from gee_project.txt
         if os.path.exists("gee_project.txt"):
             with open("gee_project.txt", "r") as f:
                 project_id = f.read().strip()
