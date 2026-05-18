@@ -1,5 +1,5 @@
 import streamlit as st
-import geemap.foliumap as geemap
+import folium
 import ee
 import pandas as pd
 import numpy as np
@@ -456,9 +456,9 @@ def main():
     with col_map:
         st.subheader("🗺️ Location Map")
         st.caption("🖱️ **Click anywhere on the map** to select coordinates!")
-        m = geemap.Map(center=[st.session_state.lat, st.session_state.lon], zoom=9)
-        m.add_marker(location=[st.session_state.lat, st.session_state.lon],
-                     popup=f"{st.session_state.lat:.4f}°N, {st.session_state.lon:.4f}°E")
+        m = folium.Map(location=[st.session_state.lat, st.session_state.lon], zoom_start=9)
+        folium.Marker(location=[st.session_state.lat, st.session_state.lon],
+                     popup=f"{st.session_state.lat:.4f}°N, {st.session_state.lon:.4f}°E").add_to(m)
         
         # Render map using st_folium to capture click events
         map_data = st_folium(m, width=650, height=450, key="interactive_map")
