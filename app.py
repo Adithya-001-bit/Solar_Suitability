@@ -159,31 +159,39 @@ def load_model():
     return joblib.load(model_path)
 
 # Initialize GEE
-@st.cache_resource(ttl=3600)
+@st.cache_resource(ttl=1)
 def init_gee():
+    debug_info = []
     try:
         # Streamlit Cloud / Local with Secrets
         has_gee_secrets = False
         try:
             if "gee" in st.secrets:
                 has_gee_secrets = True
+                debug_info.append("Secrets found")
+            else:
+                debug_info.append("No [gee] block in secrets")
         except FileNotFoundError:
-            pass # No secrets file found
+            debug_info.append("FileNotFound: No st.secrets")
 
         if has_gee_secrets:
             import json
             gee_cfg = st.secrets["gee"]
+            debug_info.append(f"Keys in [gee]: {list(gee_cfg.keys())}")
             
-            # If using a service account (recommended for deployment)
+            # If using a service account
             if "type" in gee_cfg and gee_cfg["type"] == "service_account":
                 sa_creds = dict(gee_cfg)
                 credentials = ee.ServiceAccountCredentials(gee_cfg["client_email"], key_data=json.dumps(sa_creds))
-                project_id = gee_cfg.get("project_id", "")
+                project_id = gee_cfg.get("project_id", "") or gee_cfg.get("project", "")
+                debug_info.append(f"Project ID read: '{project_id}'")
+                
                 if project_id and project_id != "your-google-cloud-project-id":
                     ee.Initialize(credentials=credentials, project=project_id)
                 else:
                     ee.Initialize(credentials=credentials)
                 return True, ""
+                
             # If using an OAuth refresh token
             elif "refresh_token" in gee_cfg:
                 creds = {
@@ -201,14 +209,20 @@ def init_gee():
                 with open(cred_path, "w") as f:
                     json.dump(creds, f)
                     
-                project_id = gee_cfg.get("project_id", "")
+                project_id = gee_cfg.get("project_id", "") or gee_cfg.get("project", "")
+                debug_info.append(f"Project ID read: '{project_id}'")
+                
                 if project_id and project_id != "your-google-cloud-project-id":
                     ee.Initialize(project=project_id)
                 else:
+                    debug_info.append("Calling ee.Initialize() without project")
                     ee.Initialize()
                 return True, ""
+            else:
+                debug_info.append("No refresh_token or service_account found in [gee]")
 
         # Local dev: read project ID from gee_project.txt
+        debug_info.append("Attempting local dev fallback")
         if os.path.exists("gee_project.txt"):
             with open("gee_project.txt", "r") as f:
                 project_id = f.read().strip()
@@ -220,7 +234,7 @@ def init_gee():
         ee.Initialize()
         return True, ""
     except Exception as e:
-        return False, str(e)
+        return False, f"{str(e)} | Debug: {' -> '.join(debug_info)}"
 
 # Fetch GEE data for a point using reduceRegion for robust extraction
 def fetch_gee_data(lat, lon, month):
